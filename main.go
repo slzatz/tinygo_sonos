@@ -1,12 +1,18 @@
 package main
 
-// combines mqtt and writing to the epaper display
-// each of those things works separately but
-// json seems to send it over edge
+/*
+combines mqtt and writing to the epaper display
+each of those things works separately but
+need to limit epaper canvas size to get
+it to work with Arduino Nano 33 IoT and
+Arduino MKR Wifi 1010 which have
+256kb of flash and 32kb of SRAM
+*/
 
 import (
 	"image/color"
 	"machine"
+	"strings"
 	"time"
 
 	"github.com/mailru/easyjson"
@@ -17,13 +23,7 @@ import (
 	"tinygo.org/x/tinyfont/freemono"
 )
 
-/*
-const ssid = ""
-const pass = ""
-*/
-
 var (
-	// these are the default pins for the Arduino Nano33 IoT.
 	spi     = machine.NINA_SPI
 	adaptor *wifinina.Device
 	cl      mqtt.Client
@@ -31,9 +31,9 @@ var (
 	display epd4in2.Device
 	black   = color.RGBA{1, 1, 1, 255}
 	font    = &freemono.Bold9pt7b
+	Board   string
 )
 
-//var topic = "sonos/current_track"
 const topic = "sonos/current_track"
 
 //easyjson:json
@@ -41,11 +41,6 @@ type JSONData struct {
 	Artist string
 	Title  string
 }
-
-//const server = "tcp://...:1883"
-
-//var topic = "sonos/current_track"
-//const topic = "sonos/current_track"
 
 func subHandler(client mqtt.Client, msg mqtt.Message) {
 	d := &JSONData{}
@@ -57,34 +52,67 @@ func subHandler(client mqtt.Client, msg mqtt.Message) {
 	println("track: ", d.Title)
 	display.ClearDisplay()
 	display.ClearBuffer()
-	time.Sleep(3000 * time.Millisecond)                                                     // needs min ~3 sec
-	tinyfont.WriteLineRotated(&display, font, 2, 20, d.Artist, black, tinyfont.NO_ROTATION) //x,y
-	tinyfont.WriteLineRotated(&display, font, 2, 60, d.Title, black, tinyfont.NO_ROTATION)
+	time.Sleep(3000 * time.Millisecond) // needs min ~3 sec
+	var line int16
+	line = writeString(d.Artist, 19, 20)
+	_ = writeString(d.Title, 19, line+25)
 	time.Sleep(1500 * time.Millisecond) // needs min ~1.5 sec
 	display.Display()
 }
 
+func writeString(s string, ln int, line int16) int16 {
+	if len(s) < ln {
+		tinyfont.WriteLineRotated(&display, font, 2, line, s, black, tinyfont.NO_ROTATION)
+		return line
+	} else {
+		ss := strings.Split(s, " ")
+		n := len(ss) - len(ss)/2
+		firstLine := strings.Join(ss[:n], " ")
+		secondLine := strings.Join(ss[n:], " ")
+		tinyfont.WriteLineRotated(&display, font, 2, line, firstLine, black, tinyfont.NO_ROTATION)
+		line += 15
+		tinyfont.WriteLineRotated(&display, font, 2, line, secondLine, black, tinyfont.NO_ROTATION)
+		return line
+	}
+}
+
 func main() {
+	// below for epd
 	err := machine.SPI0.Configure(machine.SPIConfig{Frequency: 2000000}) //115200 worked
 	if err != nil {
 		println(err)
 	}
-	// these could have been any digital except SPI D11-D13
-	busyPin := machine.D7
-	rstPin := machine.D8
-	dcPin := machine.D9  //Data/Command: high for data, low for command
-	csPin := machine.D10 //CS - low active
-	//dinPin := machine.D11 //SDO //MOSI //D12 MISO/SDI
-	//d12 doesn't appear that waveshare uses SDI/MISO
-	//clkPin := machine.D13 //sck
+	println("Board:", Board)
+	var busy, rst, dc, cs machine.Pin
+	if Board[0] == 0x6e { // using -ldflags="-X 'main.Board=n'"
+		/* below are pins used for the nano 33 IoT*/
+		// these could have been any digital pins except SPI D11-D13
+		busy = machine.D7
+		rst = machine.D8
+		dc = machine.D9  //Data/Command: high for data, low for command
+		cs = machine.D10 //CS - low active
+		//	din := machine.D11 => SDO/MOSI //D12 MISO/SDI
+		//	d12 SDI/MISO; not used by waveshare -- assume shouldn't be used for something else
+		//	clk := machine.D13 => SCK
+	} else {
+		/* below are the pins used for the mkr wifi 1010 */
+		// these could have been any digital pins except SPI D8-D10
+		busy = machine.D2
+		rst = machine.D3
+		dc = machine.D4 //Data/Command: high for data, low for command
+		cs = machine.D5 //CS - low active
+		//	din := machine.D8 => SDO/MOSI //D12 MISO/SDI
+		//	d10 SDI/MISO; not used by waveshare -- assume shouldn't be used for something else
+		//	clk := machine.D9 => SCK
+	}
 
 	var config epd4in2.Config
-	config.Width = 200        // 400 // 150
-	config.Height = 150       // 300 // 100
+	config.Width = 200        // 400
+	config.Height = 150       // 300
 	config.LogicalWidth = 200 // 400
 	config.Rotation = 0
 
-	display = epd4in2.New(machine.SPI0, csPin, dcPin, rstPin, busyPin)
+	display = epd4in2.New(machine.SPI0, cs, dc, rst, busy)
 	display.Configure(config)
 	time.Sleep(3000 * time.Millisecond)
 	display.ClearDisplay()
@@ -97,15 +125,31 @@ func main() {
 		SCK:       machine.NINA_SCK,
 	})
 
+	time.Sleep(5 * time.Second) ///////
 	// Init wifit
 	adaptor = wifinina.New(spi,
 		machine.NINA_CS,
 		machine.NINA_ACK,
 		machine.NINA_GPIO0,
-		machine.NINA_RESETN)
-	adaptor.Configure()
+		machine.NINA_RESETN,
+	)
+	//adaptor.Configure()
+	adaptor.Configure2(true)    //true = reset active high
+	time.Sleep(5 * time.Second) // necessary
+	s, err := adaptor.GetFwVersion()
+	if err != nil {
+		println("firmware:", err)
+	}
+	println("firmware:", s)
 
-	connectToAP()
+	//time.Sleep(10 * time.Second) ///////
+
+	for {
+		err := connectToAP()
+		if err == nil {
+			break
+		}
+	}
 
 	opts := mqtt.NewClientOptions()
 	opts.AddBroker(server).SetClientID("tinygo-client-1")
@@ -140,15 +184,14 @@ func failMessage(action, msg string) {
 	time.Sleep(5 * time.Second)
 }
 
-func connectToAP() {
+func connectToAP() error {
 	time.Sleep(2 * time.Second)
 	println("Connecting to " + ssid)
 	err := adaptor.ConnectToAccessPoint(ssid, pass, 10*time.Second)
-	if err != nil { // error connecting to AP
-		for {
-			println(err)
-			time.Sleep(1 * time.Second)
-		}
+	if err != nil {
+		println(err)
+		//time.Sleep(2 * time.Second)
+		return err
 	}
 
 	println("Connected.")
@@ -160,4 +203,5 @@ func connectToAP() {
 		time.Sleep(1 * time.Second)
 	}
 	println(ip.String())
+	return nil
 }
