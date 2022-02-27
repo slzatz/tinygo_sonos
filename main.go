@@ -94,6 +94,12 @@ func main() {
 		//	din := machine.D11 => SDO/MOSI //D12 MISO/SDI
 		//	d12 SDI/MISO; not used by waveshare -- assume shouldn't be used for something else
 		//	clk := machine.D13 => SCK
+	} else if Board[0] == 0x6d { // -ldflags="-X 'main.Board=m'"
+		busy = machine.D6
+		rst = machine.D5
+		dc = machine.D4 //22 //Data/Command: high for data, low for command
+		cs = machine.D9 //21 //CS - low active
+
 	} else {
 		/* below are the pins used for the mkr wifi 1010 */
 		// these could have been any digital pins except SPI D8-D10
@@ -107,15 +113,17 @@ func main() {
 	}
 
 	var config epd4in2.Config
-	config.Width = 200        // 400
-	config.Height = 150       // 300
-	config.LogicalWidth = 200 // 400
+	config.Width = 400        // 200
+	config.Height = 300       // 150
+	config.LogicalWidth = 400 // 200
 	config.Rotation = 0
 
 	display = epd4in2.New(machine.SPI0, cs, dc, rst, busy)
 	display.Configure(config)
 	time.Sleep(3000 * time.Millisecond)
 	display.ClearDisplay()
+	println(busy)
+	println(rst)
 
 	// Configure SPI for 8Mhz, Mode 0, MSB First
 	spi.Configure(machine.SPIConfig{
@@ -134,7 +142,7 @@ func main() {
 		machine.NINA_RESETN,
 	)
 	//adaptor.Configure()
-	adaptor.Configure2(true)    //true = reset active high
+	adaptor.Configure2(false)   //true = reset active high
 	time.Sleep(5 * time.Second) // necessary
 	s, err := adaptor.GetFwVersion()
 	if err != nil {
