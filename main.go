@@ -10,6 +10,7 @@ Arduino MKR Wifi 1010 which have
 */
 
 import (
+	"fmt"
 	"image/color"
 	"machine"
 	"strings"
@@ -24,6 +25,7 @@ import (
 )
 
 var (
+	bat     = machine.ADC{machine.A6}
 	spi     = machine.NINA_SPI
 	adaptor *wifinina.Device
 	cl      mqtt.Client
@@ -56,6 +58,11 @@ func subHandler(client mqtt.Client, msg mqtt.Message) {
 	var line int16
 	line = writeString(d.Artist, 19, 20)
 	_ = writeString(d.Title, 19, line+25)
+	v := bat.Get()
+	v = v * 2 * 3 / 1024 // we divided by 2, so multiply back
+	voltage := fmt.Sprintf("VBat: %v", v)
+	tinyfont.WriteLineRotated(&display, font, 2, 250, voltage, black, tinyfont.NO_ROTATION)
+	println(voltage)
 	time.Sleep(1500 * time.Millisecond) // needs min ~1.5 sec
 	display.Display()
 }
@@ -77,6 +84,8 @@ func writeString(s string, ln int, line int16) int16 {
 }
 
 func main() {
+	// configure battery reading
+	bat.Configure(machine.ADCConfig{})
 	// below for epd
 	err := machine.SPI0.Configure(machine.SPIConfig{Frequency: 2000000}) //115200 worked
 	if err != nil {

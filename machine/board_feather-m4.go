@@ -1,3 +1,4 @@
+//go:build feather_m4
 // +build feather_m4
 
 package machine
@@ -36,6 +37,7 @@ const (
 	A3 = PB09 // ADC/AIN[4]
 	A4 = PA04 // ADC/AIN[5]
 	A5 = PA06 // ADC/AIN[10]
+	A6 = PB01 // Battery Voltage Divider
 )
 
 const (
@@ -100,6 +102,7 @@ const (
 	NINA_TX     Pin = PB16
 	NINA_RX     Pin = PB17
 )
+
 // USB CDC identifiers
 const (
 	usb_STRING_PRODUCT      = "Adafruit Feather M4"
