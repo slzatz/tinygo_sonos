@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"image/color"
 	"machine"
+
+	"math/rand"
 	"strings"
 	"time"
 
@@ -59,8 +61,8 @@ func subHandler(client mqtt.Client, msg mqtt.Message) {
 	line = writeString(d.Artist, 19, 20)
 	_ = writeString(d.Title, 19, line+25)
 	v := bat.Get()
-	v = v * 2 * 3 / 1024 // we divided by 2, so multiply back
-	voltage := fmt.Sprintf("VBat: %v", v)
+	vv := float32(v) * 3.75 * 2 / 65536
+	voltage := fmt.Sprintf("VBat: %.2f (%x)", vv, v)
 	tinyfont.WriteLineRotated(&display, font, 2, 250, voltage, black, tinyfont.NO_ROTATION)
 	println(voltage)
 	time.Sleep(1500 * time.Millisecond) // needs min ~1.5 sec
@@ -85,7 +87,8 @@ func writeString(s string, ln int, line int16) int16 {
 
 func main() {
 	// configure battery reading
-	bat.Configure(machine.ADCConfig{})
+	machine.InitADC()
+	bat.Configure(machine.ADCConfig{Samples: 4, Reference: 3750})
 	// below for epd
 	err := machine.SPI0.Configure(machine.SPIConfig{Frequency: 2000000}) //115200 worked
 	if err != nil {
@@ -131,8 +134,8 @@ func main() {
 	display.Configure(config)
 	time.Sleep(3000 * time.Millisecond)
 	display.ClearDisplay()
-	println(busy)
-	println(rst)
+	//println(busy)
+	//println(rst)
 
 	// Configure SPI for 8Mhz, Mode 0, MSB First
 	spi.Configure(machine.SPIConfig{
@@ -169,7 +172,10 @@ func main() {
 	}
 
 	opts := mqtt.NewClientOptions()
-	opts.AddBroker(server).SetClientID("tinygo-client-1")
+	clientID := "tinygo-client-" + randomString(len(Board))
+	opts.AddBroker(server).SetClientID(clientID)
+	println(clientID)
+	//opts.AddBroker(server).SetClientID("tinygo-client-2")
 
 	println("Connecting to MQTT broker at", server)
 	cl = mqtt.NewClient(opts)
@@ -221,4 +227,18 @@ func connectToAP() error {
 	}
 	println(ip.String())
 	return nil
+}
+
+// Returns an int >= min, < max
+func randomInt(min, max int) int {
+	return min + rand.Intn(max-min)
+}
+
+// Generate a random string of A-Z chars with len = l
+func randomString(len int) string {
+	bytes := make([]byte, len)
+	for i := 0; i < len; i++ {
+		bytes[i] = byte(randomInt(65, 90))
+	}
+	return string(bytes)
 }
