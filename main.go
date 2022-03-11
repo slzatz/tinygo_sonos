@@ -61,7 +61,7 @@ func subHandler(client mqtt.Client, msg mqtt.Message) {
 	line = writeString(d.Artist, 19, 20)
 	_ = writeString(d.Title, 19, line+25)
 	v := bat.Get()
-	vv := float32(v) * 3.75 * 2 / 65536
+	vv := float32(v) * 3.3 * 1.1 * 2 / 65536 // 1.1 is just a kluge to get closer to expected battery at full charge
 	voltage := fmt.Sprintf("VBat: %.2f (%x)", vv, v)
 	tinyfont.WriteLineRotated(&display, font, 2, 250, voltage, black, tinyfont.NO_ROTATION)
 	println(voltage)
@@ -88,7 +88,7 @@ func writeString(s string, ln int, line int16) int16 {
 func main() {
 	// configure battery reading
 	machine.InitADC()
-	bat.Configure(machine.ADCConfig{Samples: 4, Reference: 3750})
+	bat.Configure(machine.ADCConfig{Samples: 4, Reference: 3300}) // 3.3 volts is default but setting explicitly
 	// below for epd
 	err := machine.SPI0.Configure(machine.SPIConfig{Frequency: 2000000}) //115200 worked
 	if err != nil {
